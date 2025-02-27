@@ -14,16 +14,17 @@ class LeaveScreen extends StatefulWidget {
 }
 
 class _LeaveScreenState extends State<LeaveScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+    with TickerProviderStateMixin {
+  // Changed to TickerProviderStateMixin
+  TabController? _tabController;
   String? _currentEmployeeId;
-  bool _isAdmin = false; // This would be determined by user role
+  bool _isAdmin = false;
+  bool _isInitialized = false;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-    // For demo purposes, we'll assume the first employee is logged in
+    // We'll initialize the TabController after we know the admin status
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadCurrentEmployee();
     });
@@ -35,62 +36,85 @@ class _LeaveScreenState extends State<LeaveScreen>
       listen: false,
     );
     if (employeeService.employees.isNotEmpty) {
+      // For demo purposes, assume admin
+      final isAdmin = true;
+
       setState(() {
         _currentEmployeeId = employeeService.employees.first.id;
-        // For demo purposes, assume admin
-        _isAdmin = true;
+        _isAdmin = isAdmin;
+
+        // Initialize the TabController only once with proper length
+        if (!_isInitialized) {
+          _tabController = TabController(length: _isAdmin ? 3 : 2, vsync: this);
+          _isInitialized = true;
+        }
       });
     }
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _tabController?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    // If TabController isn't initialized yet, show loading
+    if (_tabController == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Leave Management'),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: [
-            const Tab(icon: Icon(Icons.event_note), text: 'My Leaves'),
-            if (_isAdmin)
-              const Tab(icon: Icon(Icons.approval), text: 'Approvals'),
-            const Tab(icon: Icon(Icons.group), text: 'Team Calendar'),
-          ],
-        ),
+        bottom: TabBar(controller: _tabController, tabs: _buildTabs()),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          // My Leaves Tab
-          _buildMyLeavesTab(),
-
-          // Approvals Tab (only for admin/managers)
-          if (_isAdmin) _buildApprovalsTab(),
-
-          // Team Calendar Tab
-          _buildTeamCalendarTab(),
-        ],
-      ),
+      body: TabBarView(controller: _tabController, children: _buildTabViews()),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder:
-                  (context) =>
-                      ApplyLeaveScreen(employeeId: _currentEmployeeId!),
-            ),
-          );
+          if (_currentEmployeeId != null) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder:
+                    (context) =>
+                        ApplyLeaveScreen(employeeId: _currentEmployeeId!),
+              ),
+            );
+          }
         },
         child: const Icon(Icons.add),
       ),
     );
+  }
+
+  // Build tabs based on admin status
+  List<Widget> _buildTabs() {
+    final tabs = <Widget>[
+      const Tab(icon: Icon(Icons.event_note), text: 'My Leaves'),
+    ];
+
+    if (_isAdmin) {
+      tabs.add(const Tab(icon: Icon(Icons.approval), text: 'Approvals'));
+    }
+
+    tabs.add(const Tab(icon: Icon(Icons.group), text: 'Team Calendar'));
+
+    return tabs;
+  }
+
+  // Build tab views based on admin status
+  List<Widget> _buildTabViews() {
+    final views = <Widget>[_buildMyLeavesTab()];
+
+    if (_isAdmin) {
+      views.add(_buildApprovalsTab());
+    }
+
+    views.add(_buildTeamCalendarTab());
+
+    return views;
   }
 
   Widget _buildMyLeavesTab() {

@@ -1,26 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:logging/logging.dart';
+import 'package:flutter/foundation.dart';
+import 'services/database_helper.dart';
+import 'services/role_service.dart';
+import 'services/employee_service.dart';
+import 'services/attendance_service.dart';
+import 'services/leave_service.dart';
+import 'services/payroll_service.dart';
+import 'services/tax_service.dart';
+import 'services/salary_component_service.dart';
+import 'screens/home_screen.dart';
 import 'screens/employee_directory.dart';
 import 'screens/add_employee.dart';
 import 'screens/edit_employee.dart';
 import 'screens/attendance_screen.dart';
-import 'screens/leave_screen.dart';
 import 'screens/attendance_reports_screen.dart';
-import 'services/employee_service.dart';
-import 'services/role_service.dart';
-import 'services/attendance_service.dart';
-import 'services/leave_service.dart';
-import 'services/database_helper.dart';
+import 'screens/leave_screen.dart';
+import 'screens/apply_leave_screen.dart';
+import 'screens/payroll_screen.dart';
+import 'screens/tax_management_screen.dart';
+import 'screens/salary_component_screen.dart';
 import 'models/employee.dart';
 
-final _log = Logger('Main');
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
 
-Future<void> main() async {
-  try {
-    WidgetsFlutterBinding.ensureInitialized();
-
-    // Initialize logging
+  // Initialize logging
+  if (kDebugMode) {
     Logger.root.level = Level.ALL;
     Logger.root.onRecord.listen((record) {
       debugPrint(
@@ -29,182 +36,187 @@ Future<void> main() async {
         '${record.stackTrace ?? ''}',
       );
     });
-
-    _log.info('Initializing application...');
-
-    // Initialize database and services
-    final dbHelper = DatabaseHelper.instance;
-    final employeeService = EmployeeService();
-    final roleService = RoleService();
-
-    // Initialize new services
-    final attendanceService = AttendanceService(employeeService);
-    final leaveService = LeaveService(employeeService);
-
-    // Ensure database is ready and roles are initialized
-    await dbHelper.database;
-    await dbHelper.initializeDefaultRoles();
-
-    // Initialize services
-    _log.info('Initializing services...');
-    await Future.wait([
-      employeeService.init(),
-      roleService.init(),
-      attendanceService.init(),
-      leaveService.init(),
-    ]);
-
-    // Verify roles
-    final roles = roleService.roles;
-    _log.info('Loaded ${roles.length} roles');
-    if (roles.isEmpty) {
-      _log.warning('No roles loaded - this might cause UI issues');
-    }
-
-    runApp(
-      MyApp(
-        employeeService: employeeService,
-        roleService: roleService,
-        attendanceService: attendanceService,
-        leaveService: leaveService,
-      ),
-    );
-  } catch (e, stackTrace) {
-    _log.severe('Error initializing app: $e\n$stackTrace');
-    runApp(
-      MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Error initializing app: $e',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
   }
+
+  // Initialize services
+  final dbHelper = DatabaseHelper.instance;
+  await dbHelper.checkTables();
+  await dbHelper.initializeDefaultRoles();
+  await dbHelper.initializeDefaultPayrollData();
+
+  // Initialize services
+  final roleService = RoleService();
+  await roleService.init();
+
+  final employeeService = EmployeeService();
+  await employeeService.init();
+
+  final attendanceService = AttendanceService(employeeService);
+  await attendanceService.init();
+
+  final leaveService = LeaveService(employeeService);
+  await leaveService.init();
+
+  final taxService = TaxService();
+  await taxService.init();
+
+  final salaryComponentService = SalaryComponentService();
+  await salaryComponentService.init();
+
+  final payrollService = PayrollService(
+    employeeService,
+    attendanceService,
+    salaryComponentService,
+    taxService,
+  );
+  await payrollService.init();
+
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (context) => roleService),
+        ChangeNotifierProvider(create: (context) => employeeService),
+        ChangeNotifierProvider(create: (context) => attendanceService),
+        ChangeNotifierProvider(create: (context) => leaveService),
+        ChangeNotifierProvider(create: (context) => taxService),
+        ChangeNotifierProvider(create: (context) => salaryComponentService),
+        ChangeNotifierProxyProvider4<
+          EmployeeService,
+          AttendanceService,
+          SalaryComponentService,
+          TaxService,
+          PayrollService
+        >(
+          create:
+              (context) => PayrollService(
+                Provider.of<EmployeeService>(context, listen: false),
+                Provider.of<AttendanceService>(context, listen: false),
+                Provider.of<SalaryComponentService>(context, listen: false),
+                Provider.of<TaxService>(context, listen: false),
+              ),
+          update:
+              (
+                context,
+                employeeService,
+                attendanceService,
+                salaryComponentService,
+                taxService,
+                previous,
+              ) => PayrollService(
+                employeeService,
+                attendanceService,
+                salaryComponentService,
+                taxService,
+              ),
+        ),
+      ],
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
-  final EmployeeService employeeService;
-  final RoleService roleService;
-  final AttendanceService attendanceService;
-  final LeaveService leaveService;
+  // Add optional parameters for each service
+  final EmployeeService? employeeService;
+  final RoleService? roleService;
+  final AttendanceService? attendanceService;
+  final LeaveService? leaveService;
+  final PayrollService? payrollService;
+  final TaxService? taxService;
+  final SalaryComponentService? salaryComponentService;
 
+  // Modify the constructor to accept these services
   const MyApp({
     super.key,
-    required this.employeeService,
-    required this.roleService,
-    required this.attendanceService,
-    required this.leaveService,
+    this.employeeService,
+    this.roleService,
+    this.attendanceService,
+    this.leaveService,
+    this.payrollService,
+    this.taxService,
+    this.salaryComponentService,
   });
 
   @override
   Widget build(BuildContext context) {
-    return MultiProvider(
-      providers: [
-        ChangeNotifierProvider.value(value: employeeService),
-        ChangeNotifierProvider.value(value: roleService),
-        ChangeNotifierProvider.value(value: attendanceService),
-        ChangeNotifierProvider.value(value: leaveService),
-      ],
-      child: MaterialApp(
-        debugShowCheckedModeBanner: false,
-        title: 'Medical HRM',
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-          useMaterial3: true,
-          appBarTheme: const AppBarTheme(
-            backgroundColor: Colors.blue,
-            foregroundColor: Colors.white,
-            elevation: 0,
-          ),
-          inputDecorationTheme: const InputDecorationTheme(
-            border: OutlineInputBorder(),
-            filled: true,
-            fillColor: Colors.white,
-            contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          ),
-        ),
-        home: const HomePage(),
-        routes: {
-          '/add-employee': (context) => const AddEmployee(),
-          '/edit-employee': (context) {
-            final employee =
-                ModalRoute.of(context)?.settings.arguments as Employee?;
-            if (employee == null) {
-              _log.warning('No employee provided for editing');
-              return const EmployeeDirectory();
-            }
-            return EditEmployee(employee: employee);
-          },
-          '/attendance': (context) => const AttendanceScreen(),
-          '/leave': (context) => const LeaveScreen(),
-          '/reports': (context) => const AttendanceReportsScreen(),
-        },
-        onGenerateRoute: (settings) {
-          _log.warning('Route not found: ${settings.name}');
-          return MaterialPageRoute(builder: (context) => const HomePage());
-        },
-      ),
-    );
-  }
-}
-
-class HomePage extends StatefulWidget {
-  const HomePage({super.key});
-
-  @override
-  State<HomePage> createState() => _HomePageState();
-}
-
-class _HomePageState extends State<HomePage> {
-  int _selectedIndex = 0;
-
-  static final List<Widget> _screens = [
-    const EmployeeDirectory(),
-    const AttendanceScreen(),
-    const LeaveScreen(),
-    const AttendanceReportsScreen(),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: _screens[_selectedIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _selectedIndex,
-        onTap: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        },
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Employees'),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.access_time),
-            label: 'Attendance',
-          ),
-          BottomNavigationBarItem(icon: Icon(Icons.event), label: 'Leaves'),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.analytics),
-            label: 'Reports',
-          ),
+    // If services are provided (during testing), use MultiProvider to override the existing providers
+    if (employeeService != null ||
+        roleService != null ||
+        attendanceService != null ||
+        leaveService != null ||
+        payrollService != null ||
+        taxService != null ||
+        salaryComponentService != null) {
+      return MultiProvider(
+        providers: [
+          if (roleService != null)
+            ChangeNotifierProvider<RoleService>.value(value: roleService!),
+          if (employeeService != null)
+            ChangeNotifierProvider<EmployeeService>.value(
+              value: employeeService!,
+            ),
+          if (attendanceService != null)
+            ChangeNotifierProvider<AttendanceService>.value(
+              value: attendanceService!,
+            ),
+          if (leaveService != null)
+            ChangeNotifierProvider<LeaveService>.value(value: leaveService!),
+          if (taxService != null)
+            ChangeNotifierProvider<TaxService>.value(value: taxService!),
+          if (salaryComponentService != null)
+            ChangeNotifierProvider<SalaryComponentService>.value(
+              value: salaryComponentService!,
+            ),
+          if (payrollService != null)
+            ChangeNotifierProvider<PayrollService>.value(
+              value: payrollService!,
+            ),
         ],
+        child: _buildMaterialApp(),
+      );
+    }
+
+    // For normal app usage, no need to wrap in additional providers
+    return _buildMaterialApp();
+  }
+
+  // Extract the MaterialApp into a separate method to avoid code duplication
+  MaterialApp _buildMaterialApp() {
+    return MaterialApp(
+      title: 'HRM App',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        useMaterial3: true,
       ),
+      home: const HomeScreen(),
+      routes: {
+        '/employee-directory': (context) => const EmployeeDirectory(),
+        '/add-employee': (context) => const AddEmployee(),
+        '/attendance': (context) => const AttendanceScreen(),
+        '/attendance-reports': (context) => const AttendanceReportsScreen(),
+        '/leave': (context) => const LeaveScreen(),
+        '/payroll': (context) => const PayrollScreen(),
+        '/tax-management': (context) => const TaxManagementScreen(),
+        '/salary-components': (context) => const SalaryComponentScreen(),
+      },
+      onGenerateRoute: (settings) {
+        switch (settings.name) {
+          case '/edit-employee':
+            // Cast the arguments to Employee type
+            final employee = settings.arguments as Employee;
+            return MaterialPageRoute(
+              builder: (context) => EditEmployee(employee: employee),
+            );
+          case '/apply-leave':
+            final employeeId = settings.arguments as String;
+            return MaterialPageRoute(
+              builder: (context) => ApplyLeaveScreen(employeeId: employeeId),
+            );
+          default:
+            return null;
+        }
+      },
     );
   }
 }

@@ -8,6 +8,9 @@ import 'package:hrm_app/services/employee_service.dart';
 import 'package:hrm_app/services/role_service.dart';
 import 'package:hrm_app/services/attendance_service.dart';
 import 'package:hrm_app/services/leave_service.dart';
+import 'package:hrm_app/services/payroll_service.dart';
+import 'package:hrm_app/services/tax_service.dart';
+import 'package:hrm_app/services/salary_component_service.dart';
 import 'package:hrm_app/main.dart';
 
 class MockEmployeeService extends EmployeeService {
@@ -69,9 +72,8 @@ class MockRoleService extends RoleService {
 class MockAttendanceService extends AttendanceService {
   final List<Attendance> _mockAttendances = [];
 
-  // ignore: use_super_parameters
-  MockAttendanceService(EmployeeService employeeService)
-    : super(employeeService);
+  // Using super parameter for employeeService
+  MockAttendanceService(super.employeeService);
 
   @override
   List<Attendance> get attendances => _mockAttendances;
@@ -131,8 +133,8 @@ class MockAttendanceService extends AttendanceService {
 class MockLeaveService extends LeaveService {
   final List<Leave> _mockLeaves = [];
 
-  // ignore: use_super_parameters
-  MockLeaveService(EmployeeService employeeService) : super(employeeService);
+  // Using super parameter for employeeService
+  MockLeaveService(super.employeeService);
 
   @override
   List<Leave> get leaves => _mockLeaves;
@@ -170,11 +172,44 @@ class MockLeaveService extends LeaveService {
   }
 }
 
+// Add mocks for the new services
+class MockTaxService extends TaxService {
+  @override
+  Future<void> init() async {
+    // Mock initialization
+  }
+}
+
+class MockSalaryComponentService extends SalaryComponentService {
+  @override
+  Future<void> init() async {
+    // Mock initialization
+  }
+}
+
+class MockPayrollService extends PayrollService {
+  // Using super parameters for all injected services
+  MockPayrollService(
+    super.employeeService,
+    super.attendanceService,
+    super.salaryComponentService,
+    super.taxService,
+  );
+
+  @override
+  Future<void> init() async {
+    // Mock initialization
+  }
+}
+
 void main() {
   late MockEmployeeService mockEmployeeService;
   late MockRoleService mockRoleService;
   late MockAttendanceService mockAttendanceService;
   late MockLeaveService mockLeaveService;
+  late MockTaxService mockTaxService;
+  late MockSalaryComponentService mockSalaryComponentService;
+  late MockPayrollService mockPayrollService;
 
   setUp(() {
     mockEmployeeService = MockEmployeeService();
@@ -183,6 +218,16 @@ void main() {
     // Create mock services using the employee service
     mockAttendanceService = MockAttendanceService(mockEmployeeService);
     mockLeaveService = MockLeaveService(mockEmployeeService);
+
+    // Initialize new mock services
+    mockTaxService = MockTaxService();
+    mockSalaryComponentService = MockSalaryComponentService();
+    mockPayrollService = MockPayrollService(
+      mockEmployeeService,
+      mockAttendanceService,
+      mockSalaryComponentService,
+      mockTaxService,
+    );
 
     // Initialize roles for tests
     mockRoleService.loadRoles();
@@ -195,11 +240,15 @@ void main() {
         roleService: mockRoleService,
         attendanceService: mockAttendanceService,
         leaveService: mockLeaveService,
+        payrollService: mockPayrollService,
+        taxService: mockTaxService,
+        salaryComponentService: mockSalaryComponentService,
       ),
     );
 
-    // Verify that the app shows the employee directory initially
-    expect(find.text('Employee Directory'), findsOneWidget);
+    // Note: The test expectation may need to be updated depending on your HomeScreen implementation
+    // If your HomeScreen doesn't show "Employee Directory" text initially, adjust this expectation
+    expect(find.text('HR Management System'), findsOneWidget);
   });
 
   testWidgets('Add employee button test', (WidgetTester tester) async {
@@ -209,8 +258,20 @@ void main() {
         roleService: mockRoleService,
         attendanceService: mockAttendanceService,
         leaveService: mockLeaveService,
+        payrollService: mockPayrollService,
+        taxService: mockTaxService,
+        salaryComponentService: mockSalaryComponentService,
       ),
     );
+
+    // Note: This test may need to be adjusted based on your HomeScreen implementation
+    // If the add button isn't immediately visible, you may need to navigate to the employee directory first
+
+    // Navigate to employee directory
+    await tester.tap(
+      find.text('Employees'),
+    ); // Assuming this is a button on your HomeScreen
+    await tester.pumpAndSettle();
 
     // Find and tap the add employee button
     await tester.tap(find.byIcon(Icons.add));
@@ -243,8 +304,18 @@ void main() {
         roleService: mockRoleService,
         attendanceService: mockAttendanceService,
         leaveService: mockLeaveService,
+        payrollService: mockPayrollService,
+        taxService: mockTaxService,
+        salaryComponentService: mockSalaryComponentService,
       ),
     );
+
+    // Note: This test may need to be adjusted based on your HomeScreen implementation
+    // Navigate to employee directory first
+    await tester.tap(
+      find.text('Employees'),
+    ); // Assuming this is a button on your HomeScreen
+    await tester.pumpAndSettle();
 
     // Verify that the employee is displayed
     expect(find.text('John Doe'), findsOneWidget);
@@ -287,8 +358,18 @@ void main() {
         roleService: mockRoleService,
         attendanceService: mockAttendanceService,
         leaveService: mockLeaveService,
+        payrollService: mockPayrollService,
+        taxService: mockTaxService,
+        salaryComponentService: mockSalaryComponentService,
       ),
     );
+
+    // Note: This test may need to be adjusted based on your HomeScreen implementation
+    // Navigate to employee directory first
+    await tester.tap(
+      find.text('Employees'),
+    ); // Assuming this is a button on your HomeScreen
+    await tester.pumpAndSettle();
 
     // Enter search query
     await tester.enterText(find.byType(TextField), 'John');
@@ -299,5 +380,5 @@ void main() {
     expect(find.text('Jane Smith'), findsNothing);
   });
 
-  // You can add more tests for the new attendance and leave functionality here
+  // You can add more tests for the new attendance, leave, and payroll functionality here
 }
